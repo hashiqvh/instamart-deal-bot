@@ -65,6 +65,8 @@ Configure `SEARCH_QUERIES` and `MAX_PAGES`. For each location, results from all 
 
 A new alert needs a 5% improvement over the last notified price in the same account scope. A reservation before sending avoids duplicates after ambiguous delivery failures, but can lose an alert on timeout/crash. Explicit Telegram rate-limit rejections allow later retry. Blocked chats pause. Images rejected by Telegram fall back to text.
 
+The default search list contains 60 discovery terms spanning groceries, fresh food, snacks, drinks, baby care, personal care, household supplies, pets, stationery, toys, sports, electronics and appliances, including Digitek, microphones and tripods. Override `SEARCH_QUERIES` to customize coverage. These are search terms, not an exhaustive Swiggy category listing. At three pages per term, a location can require up to 180 requests; three-second request spacing alone can take about nine minutes, plus service latency and the wait between scans. Multiple users and locations increase this time. Confirmation freshness includes scan duration to accommodate broader searches.
+
 Price history expires after `HISTORY_DAYS`; delivery history persists. SQLite also contains precise locations, so restrict filesystem access and backups. Serve production traffic only after confirming rate/callback arrangements with Swiggy. This implementation has automated multi-user tests; a real two-account end-to-end login awaits a configured public callback.
 
 ## Development

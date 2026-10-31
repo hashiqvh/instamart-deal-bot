@@ -362,6 +362,7 @@ class Bot(MenuUI):
         self.db.run("UPDATE notifications SET status='sent' WHERE user_id=? AND area=? AND sku=?", (uid,area,p.sku))
 
     async def scan(self, source, bot, account_uid=None, generation=None):
+        scan_started = time.monotonic()
         groups = defaultdict(list)
         for row in self.db.targets():
             if account_uid is None or row['user_id'] == account_uid:
@@ -401,7 +402,10 @@ class Bot(MenuUI):
             # larger rupee savings on equal percentages; SKU keeps ties stable.
             ranked = sorted(products, key=lambda p: (-p.discount, -(p.mrp-p.price), p.sku))
             for p in ranked:
-                if not self.db.observe(area,p,now,self.s.poll*3,self.s.confirmations,self.s.savings):
+                # Broad searches can take longer than the idle polling interval.
+                # Include scan time so normal full scans do not reset confirmations.
+                observation_window = 3 * (self.s.poll + time.monotonic() - scan_started)
+                if not self.db.observe(area,p,now,observation_window,self.s.confirmations,self.s.savings):
                     continue
                 notified = set()
                 for row in rows:
