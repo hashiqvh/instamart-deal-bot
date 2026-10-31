@@ -80,6 +80,31 @@ async def test_scan_isolates_accounts_and_notifies_once(db,product):
     await service.scan(source,telegram)
     assert telegram.send_message.await_count == 2
 
+async def test_scan_ranks_qualifying_deals_and_preserves_confirmation_and_dedup(db):
+    service = Bot(Settings('fake',frozenset({1}),savings=10000),db)
+    db.user(1)
+    db.run('INSERT INTO locations(user_id,name,lat,lon) VALUES(?,?,?,?)',(1,'Home',12,77))
+    products = [
+        Product('low','Low',100000,50000,True),
+        Product('tie-small','Tie small',100000,40000,True),
+        Product('unavailable','Unavailable',100000,10000,False),
+        Product('highest','Highest',100000,20000,True),
+        Product('tie-large','Tie large',200000,80000,True),
+        Product('below','Below threshold',100000,60000,True),
+        Product('tiny','Tiny savings',1000,100,True),
+    ]
+    source = SimpleNamespace(search=AsyncMock(return_value=products))
+    telegram = SimpleNamespace(send_message=AsyncMock())
+    await service.scan(source,telegram)
+    assert telegram.send_message.await_count == 0
+    await service.scan(source,telegram)
+    messages = [call.args[1] for call in telegram.send_message.await_args_list]
+    assert len(messages) == 4
+    for message, name in zip(messages, ['Highest','Tie large','Tie small','Low']):
+        assert name in message
+    await service.scan(source,telegram)
+    assert telegram.send_message.await_count == 4
+
 async def test_pagination_and_coordinates():
     calls = []
     async def call(name,args):

@@ -61,7 +61,7 @@ Locations, thresholds and delivery history belong to Telegram users. Search resu
 
 Default: 50% off MRP, ₹100 minimum savings and two stable observations within three polling intervals. Invalid prices, unknown stock and unavailable variants don't qualify. Discount is `(MRP - offerPrice) / MRP × 100`; basket, bank, membership and coupon discounts aren't added. History rejects increased MRPs and prices above a recently observed low. First-seen MRP cannot independently be verified as market value.
 
-Configure `SEARCH_QUERIES` and `MAX_PAGES`. This is bounded search coverage, not a full-catalog feed. Default scans wait 300 seconds after completion; confirmations add latency. Global request spacing and backoff increase latency with load. Notifications contain product, price, discount, location, and optional image/link. No URLs are fabricated.
+Configure `SEARCH_QUERIES` and `MAX_PAGES`. For each location, results from all fetched queries and pages are ranked by discount percentage, highest first, with larger rupee savings breaking ties. Qualifying alerts follow that order. This ranks only fetched results: coverage is bounded search, not a full-catalog feed. Default scans wait 300 seconds after completion; confirmations add latency. Global request spacing and backoff increase latency with load. Notifications contain product, price, discount, location, and optional image/link.
 
 A new alert needs a 5% improvement over the last notified price in the same account scope. A reservation before sending avoids duplicates after ambiguous delivery failures, but can lose an alert on timeout/crash. Explicit Telegram rate-limit rejections allow later retry. Blocked chats pause. Images rejected by Telegram fall back to text.
 

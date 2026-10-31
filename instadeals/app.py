@@ -397,7 +397,10 @@ class Bot(MenuUI):
             for previous in self.db.run('SELECT sku FROM observations WHERE area=?', (area,)).fetchall():
                 if previous['sku'] not in present:
                     self.db.run('UPDATE observations SET streak=0 WHERE area=? AND sku=?', (area,previous['sku']))
-            for p in products:
+            # Rank across all fetched queries/pages for this location. Prefer
+            # larger rupee savings on equal percentages; SKU keeps ties stable.
+            ranked = sorted(products, key=lambda p: (-p.discount, -(p.mrp-p.price), p.sku))
+            for p in ranked:
                 if not self.db.observe(area,p,now,self.s.poll*3,self.s.confirmations,self.s.savings):
                     continue
                 notified = set()
