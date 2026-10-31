@@ -1,0 +1,7 @@
+# Merge this site block into the server's existing Caddy configuration.
+# Do not replace existing sites. Requires DNS pointing at this server.
+bot.example.com {
+    @oauth path /callback
+    reverse_proxy @oauth 127.0.0.1:8765
+    respond "Not found" 404
+}

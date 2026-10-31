@@ -1,0 +1,21 @@
+services:
+  bot:
+    build:
+      context: ..
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      DATABASE_PATH: /data/instadeals.db
+      OAUTH_BIND_HOST: 0.0.0.0
+      OAUTH_PORT: 8765
+      OAUTH_CALLBACK_URL: https://bot.example.com/callback
+    volumes:
+      - bot-data:/data
+    ports:
+      - "127.0.0.1:8765:8765"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  bot-data:
