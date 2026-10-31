@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from .offers import multibuy_badges
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 from .deal_actions import public_product_link, catalog_link
@@ -13,6 +14,7 @@ class Product:
     image: str | None = None
     link: str | None = None
     check_variant: bool = False
+    offers: tuple[str, ...] = ()
 
     @property
     def discount(self):
@@ -57,7 +59,7 @@ def parse_products(data):
                 generated=catalog_link(row.get("productId"))
                 p = Product(sku, (name + " " + str(v.get("quantityDescription", "")))[:250], mrp, price,
                             row.get("inStock") is True and row.get("isAvail") is True and v.get("isInStockAndAvailable") is True,
-                            url(v.get("imageUrl")), direct or generated, bool(generated and not direct))
+                            url(v.get("imageUrl")), direct or generated, bool(generated and not direct), multibuy_badges(row))
                 if sku in result and result[sku] != p:
                     conflicts.add(sku)
                 result[sku] = p

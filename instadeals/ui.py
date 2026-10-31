@@ -19,12 +19,13 @@ class MenuUI:
         connected=bool(self.accounts and self.accounts.generation(uid))
         count=len(self.db.locations(uid))
         body=('Welcome to Instamart Deal Monitor\n\nConnect your Swiggy account, choose a saved delivery address, and set your minimum discount. I check prices regularly and send qualifying deals here.\n\n' if intro else 'Your deal monitor\n\n')
-        body+=f"Swiggy: {'Connected' if connected else 'Not connected'}\nLocations: {count}\nMinimum discount: {user['threshold']}%\nAlerts: {'On' if user['enabled'] else 'Paused'}"
+        body+=f"Swiggy: {'Connected' if connected else 'Not connected'}\nLocations: {count}\nOffer mode: {user['offer_mode']}\nMinimum discount: {user['threshold']}% (exceptional mode)\nAlerts: {'On' if user['enabled'] else 'Paused'}"
         rows=[]
         if not connected:
             rows.append([('Connect Swiggy','connect')])
         rows += [[('My locations','locations'),('Discount settings','discount')],
                  [('Monitoring status','status'),('Pause alerts' if user['enabled'] else 'Resume alerts','pause' if user['enabled'] else 'resume')],
+                 [('Offer preferences','offers'),('Coverage & limits','coverage')],
                  [('Account','account'),('How it works','help')]]
         await message.reply_text(body,reply_markup=keyboard(rows))
 
@@ -49,7 +50,7 @@ class MenuUI:
         elif action=='locations':
             locations=self.db.locations(uid)
             rows=[[('Choose Swiggy addresses','addresses')]]
-            body='My locations\n\n'
+            body='My locations\n\nSelect up to 10 saved addresses. Each keeps its own prices and alerts. Adding one does not replace the others.\n'
             if not locations:
                 body+='No locations selected yet. Choose an address saved in your Swiggy account.'
             for row in locations:
@@ -69,10 +70,31 @@ class MenuUI:
             except ValueError: return
             self.db.run('DELETE FROM locations WHERE id=? AND user_id=?',(loc_id,uid))
             await message.reply_text('Location removed from monitoring. Your Swiggy address is unchanged.',reply_markup=keyboard([[('My locations','locations')]]))
+        elif action=='offers':
+            user=self.db.user(uid)
+            rows=[[(('✓ ' if user['offer_mode']==mode else '')+label, 'mode:'+mode)]
+                  for mode,label in [('exceptional','Exceptional discounts'),('all','All discovered offers')]]
+            rows += [[(('✓ ' if user['sort_order']==order else '')+label, 'sort:'+order)]
+                     for order,label in [('discount','Discount: high to low'),('price_low','Price: low to high'),('price_high','Price: high to low')]]
+            await message.reply_text('Offer preferences\n\nExceptional: your discount threshold and minimum savings apply.\nAll discovered offers: any positive item discount or explicit buy-one/get-one or buy-two/get-one badge; no minimum ₹ savings. May send many alerts. Stock, stable observations and price-history checks still apply.\nSorting applies per address to newly qualifying alerts. Previously sent deals are not resent when you change sorting. Badge terms must be checked in Instamart.',reply_markup=keyboard(rows+back))
+        elif action.startswith('mode:'):
+            mode=action.split(':',1)[1]
+            if mode not in ('exceptional','all'): return
+            self.db.run('UPDATE users SET offer_mode=? WHERE id=?',(mode,uid))
+            await self.ui_action(update,context,'offers')
+        elif action.startswith('sort:'):
+            order=action.split(':',1)[1]
+            if order not in ('discount','price_low','price_high'): return
+            self.db.run('UPDATE users SET sort_order=? WHERE id=?',(order,uid))
+            await self.ui_action(update,context,'offers')
+        elif action=='coverage':
+            count=len(self.db.locations(uid))
+            requests=len(self.s.queries)*self.s.pages
+            await message.reply_text(f'Coverage & limits\n\nSearch terms: {len(self.s.queries)}\nPages per term: {self.s.pages} (operator setting; supported range 1–20)\nUp to {requests} search requests per address per scan\nSelected locations: {count}/10\nRequest spacing: {self.s.gap:g}s across users\nWait after scan: {self.s.poll}s\nStable observations required: {self.s.confirmations}\n\nSearch is bounded, not the entire catalog. More pages and addresses slow alerts. Some short-lived offers will be missed. Combo badges are shown only when returned; cart coupons, bank and membership offers are not monitored.',reply_markup=keyboard(back))
         elif action=='discount':
             current=self.db.user(uid)['threshold']
             rows=[[(f"{'✓ ' if current==value else ''}{value}%",f'discount:{value}') for value in (40,50,60)],[(f"{'✓ ' if current==value else ''}{value}%",f'discount:{value}') for value in (70,80,90)], [('Custom percentage','custom')]]
-            await message.reply_text(f"Minimum discount: {current}% off MRP\n\nChoose a threshold. Deals must also save at least ₹{self.s.savings/100:.0f} and pass availability and price-history checks.",reply_markup=keyboard(rows+back))
+            await message.reply_text(f"Minimum discount: {current}% off MRP\n\nChoose a threshold for exceptional mode. In that mode, deals must also save at least ₹{self.s.savings/100:.0f} and pass availability and price-history checks.",reply_markup=keyboard(rows+back))
         elif action.startswith('discount:'):
             try: value=int(action.split(':')[1])
             except ValueError: return

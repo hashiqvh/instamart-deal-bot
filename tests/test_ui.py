@@ -56,3 +56,13 @@ async def test_custom_threshold_prompt_and_input(service):
     await service.text(u,None)
     assert service.db.user(1)['threshold']==55
     assert 1 not in service.ui_inputs
+
+async def test_offer_preferences_are_per_user_and_validate_values(service):
+    await service.ui(event(1,'mode:all'),None)
+    await service.ui(event(1,'sort:price_low'),None)
+    assert service.db.user(1)['offer_mode']=='all'
+    assert service.db.user(1)['sort_order']=='price_low'
+    assert service.db.user(2)['offer_mode']=='exceptional'
+    assert service.db.user(2)['sort_order']=='discount'
+    await service.ui(event(1,'sort:invalid'),None)
+    assert service.db.user(1)['sort_order']=='price_low'

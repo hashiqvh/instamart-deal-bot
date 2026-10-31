@@ -1,4 +1,5 @@
 import sqlite3
+import json
 import time
 
 class Database:
@@ -15,6 +16,15 @@ class Database:
         CREATE TABLE IF NOT EXISTS observations(area TEXT, sku TEXT, mrp INTEGER, price INTEGER, streak INTEGER, time REAL, PRIMARY KEY(area,sku));
         CREATE TABLE IF NOT EXISTS notifications(user_id INTEGER, area TEXT, sku TEXT, price INTEGER, time REAL, status TEXT, PRIMARY KEY(user_id,area,sku));
         ''')
+
+        for table, column, definition in (
+            ('users', 'offer_mode', "TEXT NOT NULL DEFAULT 'exceptional'"),
+            ('users', 'sort_order', "TEXT NOT NULL DEFAULT 'discount'"),
+            ('observations', 'offers', "TEXT NOT NULL DEFAULT '[]'"),
+            ('notifications', 'offers', "TEXT NOT NULL DEFAULT '[]'"),
+        ):
+            if column not in {r[1] for r in self.conn.execute(f'PRAGMA table_info({table})')}:
+                self.run(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
 
         columns = {r[1] for r in self.conn.execute('PRAGMA table_info(locations)')}
         for column in ('swiggy_address_id','swiggy_generation'):
@@ -50,11 +60,11 @@ class Database:
         old = self.run("SELECT * FROM observations WHERE area=? AND sku=?", (area,p.sku)).fetchone()
         history = self.run("SELECT MIN(mrp), MIN(price) FROM prices WHERE area=? AND sku=? AND available=1", (area,p.sku)).fetchone()
         streak = 1
-        if old and p.available and old['mrp'] == p.mrp and old['price'] == p.price and now-old['time'] <= max_age:
+        if old and p.available and old['mrp'] == p.mrp and old['price'] == p.price and old['offers'] == json.dumps(p.offers) and now-old['time'] <= max_age:
             streak = old['streak'] + 1
         if not p.available:
             streak = 0
-        self.run("INSERT OR REPLACE INTO observations VALUES(?,?,?,?,?,?)", (area,p.sku,p.mrp,p.price,streak,now))
+        self.run("INSERT OR REPLACE INTO observations(area,sku,mrp,price,streak,time,offers) VALUES(?,?,?,?,?,?,?)", (area,p.sku,p.mrp,p.price,streak,now,json.dumps(p.offers)))
         self.run("INSERT INTO prices VALUES(?,?,?,?,?,?)", (area,p.sku,now,p.mrp,p.price,int(p.available)))
         # Never trust a newly inflated MRP; suppress prices above a recent low.
         genuine = (history[0] is None or p.mrp <= history[0]) and (history[1] is None or p.price <= history[1])
@@ -63,9 +73,9 @@ class Database:
     def reserve(self, uid, area, p):
         old = self.run("SELECT * FROM notifications WHERE user_id=? AND area=? AND sku=?", (uid,area,p.sku)).fetchone()
         # A further >=5% price improvement is a new deal; MRP changes aren't.
-        if old and p.price > old['price'] * .95:
+        if old and p.price > old['price'] * .95 and old['offers'] == json.dumps(p.offers):
             return False
-        self.run("INSERT OR REPLACE INTO notifications VALUES(?,?,?,?,?,?)", (uid,area,p.sku,p.price,time.time(),'pending'))
+        self.run("INSERT OR REPLACE INTO notifications(user_id,area,sku,price,time,status,offers) VALUES(?,?,?,?,?,?,?)", (uid,area,p.sku,p.price,time.time(),'pending',json.dumps(p.offers)))
         return True
 
     def cleanup(self, days):

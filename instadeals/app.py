@@ -22,6 +22,7 @@ from .deal_actions import deal_actions
 from .source import connect, failure_status, SourceError
 from .accounts import Accounts, OAuthServer
 from .ui import MenuUI, HOME, keyboard
+from .offers import rank_products
 
 log = logging.getLogger("instadeals")
 HELP = """Instamart deal monitor
@@ -170,6 +171,7 @@ class Bot(MenuUI):
                 u = self.db.user(uid)
                 message = f"Notifications: {'on' if u['enabled'] else 'paused'} | Minimum: {u['threshold']}%\n"
                 message += '\n'.join(f"{r['id']}: {r['name']}" + (f" ({r['lat']}, {r['lon']})" if r['lat'] is not None else " (saved Swiggy address)") for r in self.db.locations(uid)) or "No locations."
+                message += f"\nOffer mode: {u['offer_mode']} | Sort: {u['sort_order']}"
                 message += "\nSwiggy: " + ("connected" if self.accounts and self.accounts.generation(uid) else "not connected — /connect")
                 message += f"\nQueries: {', '.join(self.s.queries)}\nPolling: {self.s.poll}s; confirmations: {self.s.confirmations}; min savings: ₹{self.s.savings/100:.0f}"
             elif cmd == "/status":
@@ -243,7 +245,7 @@ class Bot(MenuUI):
             await self.cancel_worker(uid)
             enabled=self.db.user(uid)['enabled']
             self.user_health[uid]=f"{name} selected. A fresh scan is queued." if enabled else "Alerts paused. Tap Resume alerts to start monitoring."
-            await query.message.reply_text(f"Selected {name}. " + ("Monitoring will check this saved Swiggy address." if enabled else "Alerts are paused; use /resume to monitor.") + " Review your locations below.",reply_markup=keyboard([[('My locations','locations'),('Back to menu','home')]]))
+            await query.message.reply_text(f"Selected {name}. " + ("Monitoring will check this saved Swiggy address." if enabled else "Alerts are paused; use /resume to monitor.") + " You can add more addresses without replacing this one.",reply_markup=keyboard([[('Add another address','addresses')],[('My locations','locations'),('Back to menu','home')]]))
         except (ValueError,KeyError):
             await query.answer("Choices unavailable. Send /addresses again, or remove a location if you reached the limit.",show_alert=True)
 
@@ -334,7 +336,9 @@ class Bot(MenuUI):
     async def notify(self, bot, uid, area, name, p):
         if not self.db.reserve(uid,area,p):
             return
-        text = f"{p.name}\n₹{p.price/100:.2f} · MRP ₹{p.mrp/100:.2f} · {p.discount:.1f}% off\n📍 {name}\nVerified across {self.s.confirmations}+ scans. Price/stock may change."
+        text = f"{p.name}\n₹{p.price/100:.2f} · MRP ₹{p.mrp/100:.2f} · {p.discount:.1f}% off\n📍 {name}\nObserved across {self.s.confirmations}+ scans. Price/stock may change."
+        if p.offers:
+            text += "\nOffer badge: " + "; ".join(p.offers) + "\nCheck required quantities and terms in Instamart. Badge savings are not included above."
         actions,hint=deal_actions(p)
         text+=hint
         try:
@@ -400,12 +404,12 @@ class Bot(MenuUI):
                     self.db.run('UPDATE observations SET streak=0 WHERE area=? AND sku=?', (area,previous['sku']))
             # Rank across all fetched queries/pages for this location. Prefer
             # larger rupee savings on equal percentages; SKU keeps ties stable.
-            ranked = sorted(products, key=lambda p: (-p.discount, -(p.mrp-p.price), p.sku))
+            ranked = rank_products(products, self.db.user(rows[0]['user_id'])['sort_order'])
             for p in ranked:
                 # Broad searches can take longer than the idle polling interval.
                 # Include scan time so normal full scans do not reset confirmations.
                 observation_window = 3 * (self.s.poll + time.monotonic() - scan_started)
-                if not self.db.observe(area,p,now,observation_window,self.s.confirmations,self.s.savings):
+                if not self.db.observe(area,p,now,observation_window,self.s.confirmations,0):
                     continue
                 notified = set()
                 for row in rows:
@@ -417,7 +421,9 @@ class Bot(MenuUI):
                         continue
                     if account_uid is not None and self.accounts.generation(account_uid) != generation:
                         return
-                    if p.discount >= u['threshold']:
+                    qualifies = ((p.discount > 0 or bool(p.offers)) if u['offer_mode']=='all'
+                                 else p.discount >= u['threshold'] and p.mrp-p.price >= self.s.savings)
+                    if qualifies:
                         await self.notify(bot,uid,area,current['name'],p)
                         notified.add(uid)
         finished=datetime.now(ZoneInfo('Asia/Dubai')).strftime('%d %b, %I:%M %p')
